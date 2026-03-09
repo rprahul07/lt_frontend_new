@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const Signup = () => {
   const navigate = useNavigate();
+  const { register } = useAuth();
+
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -13,6 +16,9 @@ const Signup = () => {
     agreeToTerms: false
   });
 
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
@@ -21,14 +27,26 @@ const Signup = () => {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.agreeToTerms) {
-      alert('Please accept the terms and conditions');
+      setError('Please accept the terms and conditions');
       return;
     }
-    // TODO: Implement signup logic
-    console.log('Signup attempted with:', formData);
+    setError('');
+    setLoading(true);
+    try {
+      const { agreeToTerms, ...payload } = formData;
+      await register({
+        ...payload,
+        graduationYear: Number(payload.graduationYear) || payload.graduationYear,
+      });
+      navigate('/');
+    } catch (err) {
+      setError(err.message || 'Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -42,11 +60,18 @@ const Signup = () => {
             <p className="text-gray-400 text-sm">Get started with an account.</p>
           </div>
 
+          {/* Error Banner */}
+          {error && (
+            <div className="mb-4 px-4 py-3 bg-red-900/40 border border-red-500/50 rounded-xl text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+
           {/* Signup Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Name Input */}
             <div>
               <input
+                id="signup-name"
                 type="text"
                 name="name"
                 placeholder="Enter name"
@@ -57,9 +82,9 @@ const Signup = () => {
               />
             </div>
 
-            {/* Phone Input */}
             <div>
               <input
+                id="signup-phone"
                 type="tel"
                 name="phone"
                 placeholder="+91-99999-99999"
@@ -70,9 +95,9 @@ const Signup = () => {
               />
             </div>
 
-            {/* College Input */}
             <div>
               <input
+                id="signup-college"
                 type="text"
                 name="college"
                 placeholder="Enter college"
@@ -83,12 +108,12 @@ const Signup = () => {
               />
             </div>
 
-            {/* Year of Graduation Input */}
             <div>
               <input
-                type="text"
+                id="signup-graduation-year"
+                type="number"
                 name="graduationYear"
-                placeholder="Enter year of graduation"
+                placeholder="Year of graduation (e.g. 2026)"
                 value={formData.graduationYear}
                 onChange={handleChange}
                 className="w-full bg-transparent border-2 border-[#1a4d4d] text-white placeholder-gray-500 py-3 px-6 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300 backdrop-blur-sm"
@@ -96,9 +121,9 @@ const Signup = () => {
               />
             </div>
 
-            {/* Email Input */}
             <div>
               <input
+                id="signup-email"
                 type="email"
                 name="email"
                 placeholder="E-mail"
@@ -109,9 +134,9 @@ const Signup = () => {
               />
             </div>
 
-            {/* Password Input */}
             <div>
               <input
+                id="signup-password"
                 type="password"
                 name="password"
                 placeholder="Password"
@@ -122,7 +147,7 @@ const Signup = () => {
               />
             </div>
 
-            {/* Terms and Conditions Checkbox */}
+            {/* Terms */}
             <div className="flex items-center gap-3 py-2">
               <input
                 type="checkbox"
@@ -138,16 +163,16 @@ const Signup = () => {
               </label>
             </div>
 
-            {/* Submit Button */}
             <button
+              id="signup-submit-btn"
               type="submit"
-              className="w-full bg-gradient-to-r from-[#00ff88] to-[#00cc70] hover:from-[#00cc70] hover:to-[#00ff88] text-[#0a1f1f] font-bold py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg hover:shadow-[#00ff88]/50"
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-[#00ff88] to-[#00cc70] hover:from-[#00cc70] hover:to-[#00ff88] text-[#0a1f1f] font-bold py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg hover:shadow-[#00ff88]/50 disabled:opacity-60 disabled:scale-100"
             >
-              Create Account
+              {loading ? 'Creating account…' : 'Create Account'}
             </button>
           </form>
 
-          {/* Sign In Link */}
           <p className="text-center text-gray-400 text-sm mt-6">
             Already have an account?{' '}
             <button
@@ -160,45 +185,21 @@ const Signup = () => {
         </div>
       </div>
 
-      {/* Right Panel - Branding & Background */}
+      {/* Right Panel */}
       <div className="hidden lg:flex lg:w-1/2 relative bg-gradient-to-br from-[#0d3333] to-[#0a1f1f] items-center justify-center overflow-hidden">
-        {/* Background Image */}
         <div className="absolute inset-0 opacity-80">
-          <img
-            className="w-full h-full object-cover"
-            src="/login-bg.png"
-            alt="Tropical background"
-          />
+          <img className="w-full h-full object-cover" src="/login-bg.png" alt="Tropical background" />
         </div>
-
-        {/* Overlay gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-[#0a1f1f]/70 via-transparent to-[#0a1f1f]/70"></div>
-
-        {/* Content */}
         <div className="relative z-10 flex flex-col items-center justify-center h-full px-12">
-          {/* Logo */}
           <div className="mb-auto mt-20">
-            <img
-              src="/logo1.png"
-              alt="Lenient Tree Logo"
-              className="w-48 h-48 object-contain drop-shadow-2xl"
-            />
+            <img src="/logo1.png" alt="Lenient Tree Logo" className="w-48 h-48 object-contain drop-shadow-2xl" />
           </div>
-
-          {/* Feature Buttons */}
           <div className="grid grid-cols-2 gap-4 mb-12 w-full max-w-lg">
-            <button className="bg-transparent border-2 border-[#00ff88] text-white py-3 px-4 rounded-2xl text-sm font-medium hover:bg-[#00ff88]/10 transition-all duration-300 backdrop-blur-sm">
-              Personal event calender
-            </button>
-            <button className="bg-transparent border-2 border-[#00ff88] text-white py-3 px-4 rounded-2xl text-sm font-medium hover:bg-[#00ff88]/10 transition-all duration-300 backdrop-blur-sm">
-              Short portfolios
-            </button>
-            <button className="bg-transparent border-2 border-[#00ff88] text-white py-3 px-4 rounded-2xl text-sm font-medium hover:bg-[#00ff88]/10 transition-all duration-300 backdrop-blur-sm">
-              Certificate gallery
-            </button>
-            <button className="bg-transparent border-2 border-[#00ff88] text-white py-3 px-4 rounded-2xl text-sm font-medium hover:bg-[#00ff88]/10 transition-all duration-300 backdrop-blur-sm">
-              Upcoming event info
-            </button>
+            <button className="bg-transparent border-2 border-[#00ff88] text-white py-3 px-4 rounded-2xl text-sm font-medium hover:bg-[#00ff88]/10 transition-all duration-300 backdrop-blur-sm">Personal event calender</button>
+            <button className="bg-transparent border-2 border-[#00ff88] text-white py-3 px-4 rounded-2xl text-sm font-medium hover:bg-[#00ff88]/10 transition-all duration-300 backdrop-blur-sm">Short portfolios</button>
+            <button className="bg-transparent border-2 border-[#00ff88] text-white py-3 px-4 rounded-2xl text-sm font-medium hover:bg-[#00ff88]/10 transition-all duration-300 backdrop-blur-sm">Certificate gallery</button>
+            <button className="bg-transparent border-2 border-[#00ff88] text-white py-3 px-4 rounded-2xl text-sm font-medium hover:bg-[#00ff88]/10 transition-all duration-300 backdrop-blur-sm">Upcoming event info</button>
           </div>
         </div>
       </div>

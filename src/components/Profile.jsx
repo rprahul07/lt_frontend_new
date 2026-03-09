@@ -1,65 +1,196 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Copy, Edit2 } from 'lucide-react';
+import { ArrowLeft, Copy, Edit2, LogOut, Loader2 } from 'lucide-react';
 import Header from './Header';
 import Footer from './Footer';
+import { useAuth } from '../context/AuthContext';
+import { users, bookmarks } from '../services/api';
+
+// ─── Small helpers ────────────────────────────────────────────────────────────
+
+const Field = ({ label, name, value, onChange, type = 'text', readOnly = false }) => (
+  <div>
+    <label className="text-gray-400 text-sm mb-2 block">{label}</label>
+    <input
+      type={type}
+      name={name}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      className="w-full bg-transparent border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300 disabled:opacity-60"
+    />
+  </div>
+);
+
+// ─── Profile Component ────────────────────────────────────────────────────────
 
 const Profile = () => {
   const navigate = useNavigate();
+  const { user: authUser, logout } = useAuth();
+  const avatarInputRef = useRef(null);
+
   const [activeTab, setActiveTab] = useState('account');
-  const [userId] = useState('#thi87ece67');
 
-  // Form state for profile data
-  const [profileData, setProfileData] = useState({
-    fullName: 'Random Username',
-    email: 'Randomuser00@gmail.com',
-    expertise: 'Coder',
-    gender: 'Male',
-    phoneNumber: '+91 98765 43210',
-    location: 'Green Villa, Whitehouse junction, State P.O',
-    about: 'Event bio Event bio Event bio Event bio Event bio Event bio Event bio Event bio Event bio Event bio Event bio Event bio Event bio',
-    // Institution details
-    instituteName: 'College of Engineering, Optional',
-    instituteType: 'Student',
-    domain: 'Engineering',
-    passoutYear: '2027',
-    course: 'B-Tech',
-    specialization: 'Computer Science',
-    // Other preferences
-    tshirtSize: 'Small - S',
-    mealPreference: 'No preference'
-  });
+  // Profile data state
+  const [profileData, setProfileData] = useState(null);
+  const [myEvents, setMyEvents] = useState([]);
+  const [myCertificates, setMyCertificates] = useState([]);
+  const [myBookmarks, setMyBookmarks] = useState([]);
 
-  const [isEditing, setIsEditing] = useState(false);
+  // UI state
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profileSuccess, setProfileSuccess] = useState('');
+
+  // Password change state
+  const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
+
+  // ── Bootstrap ──
+  useEffect(() => {
+    const fetchAll = async () => {
+      try {
+        const [profileRes, eventsRes, certsRes, bookmarksRes] = await Promise.allSettled([
+          users.getMyProfile(),
+          users.getMyRegisteredEvents(),
+          users.getMyCertificates(),
+          bookmarks.getAll(),
+        ]);
+
+        if (profileRes.status === 'fulfilled') setProfileData(profileRes.value);
+        if (eventsRes.status === 'fulfilled') {
+          // Backend returns { registered, organized, bookmarked }
+          setMyEvents(eventsRes.value.registered || []);
+          setMyBookmarks(eventsRes.value.bookmarked || []);
+        }
+        if (certsRes.status === 'fulfilled') setMyCertificates(certsRes.value || []);
+        // Note: bookmarksRes is redundant if eventsRes returns them, 
+        // but keeping it as a fallback if the user wants separate fetch
+        if (bookmarksRes.status === 'fulfilled' && !eventsRes.value.bookmarked) {
+          setMyBookmarks(bookmarksRes.value || []);
+        }
+      } catch (err) {
+        setProfileError('Failed to load profile.');
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+    fetchAll();
+  }, []);
+
+  // ── Handlers ──
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setProfileData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setProfileData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
-    // TODO: Save profile data to backend
-    console.log('Profile updated:', profileData);
-    setIsEditing(false);
-    // Could add success notification here
+    setProfileError('');
+    setProfileSuccess('');
+    setSavingProfile(true);
+    try {
+      const updated = await users.updateMyProfile({
+        name: profileData.name,
+        phone: profileData.phone,
+        college: profileData.college,
+        graduationYear: profileData.graduationYear,
+        bio: profileData.bio,
+        skills: profileData.skills,
+        socialLinks: profileData.socialLinks,
+      });
+      setProfileData(updated?.user || updated || profileData);
+      setProfileSuccess('Profile saved successfully!');
+      setTimeout(() => setProfileSuccess(''), 3000);
+    } catch (err) {
+      setProfileError(err.message || 'Failed to save profile.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const res = await users.uploadAvatar(file);
+      // Backend returns updated user or { id, profileImage }
+      setProfileData(prev => ({
+        ...prev,
+        profileImage: res?.profileImage || res?.user?.profileImage || prev.profileImage
+      }));
+      setProfileSuccess('Avatar updated!');
+      setTimeout(() => setProfileSuccess(''), 3000);
+    } catch (err) {
+      setProfileError(err.message || 'Avatar upload failed.');
+    }
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordError('New passwords do not match.');
+      return;
+    }
+    setPasswordError('');
+    setPasswordSuccess('');
+    setSavingPassword(true);
+    try {
+      await users.changePassword(passwordData);
+      setPasswordSuccess('Password changed successfully!');
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setTimeout(() => setPasswordSuccess(''), 3000);
+    } catch (err) {
+      setPasswordError(err.message || 'Failed to change password.');
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const handleBecomeOrganizer = async () => {
+    try {
+      await users.becomeOrganizer();
+      setProfileSuccess('You are now an organizer!');
+      setTimeout(() => setProfileSuccess(''), 3000);
+    } catch (err) {
+      setProfileError(err.message || 'Failed to upgrade to organizer.');
+    }
   };
 
   const handleCopyUserId = () => {
-    navigator.clipboard.writeText(userId);
-    // Could add a toast notification here
+    navigator.clipboard.writeText(profileData?.id || '');
+    setProfileSuccess('User ID copied!');
+    setTimeout(() => setProfileSuccess(''), 2000);
   };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  // ── Loading State ──
+  if (loadingProfile) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#0a1f1f] via-[#0d2626] to-[#0a1f1f] flex items-center justify-center">
+        <Loader2 className="w-10 h-10 text-[#00ff88] animate-spin" />
+      </div>
+    );
+  }
+
+  const displayName = profileData?.name || profileData?.email || 'User';
+  const userId = `#${(profileData?.id || '').slice(0, 10)}`;
 
   return (
     <>
       <div className="min-h-screen bg-gradient-to-br from-[#0a1f1f] via-[#0d2626] to-[#0a1f1f] flex">
         <Header />
-        {/* Left Sidebar Navigation */}
-        <div className="w-60  lg:mt-24 lg:mt-28  p-6 hidden lg:block">
-          {/* Go Back Button */}
+
+        {/* Left Sidebar */}
+        <div className="w-60 lg:mt-24 p-6 hidden lg:block">
           <button
             onClick={() => navigate(-1)}
             className="flex items-center gap-2 text-white mb-8 hover:text-[#00ff88] transition-colors duration-300"
@@ -68,443 +199,295 @@ const Profile = () => {
             <span className="font-medium">Go Back</span>
           </button>
 
-          {/* Navigation Menu Card */}
           <div className="bg-[#0a1f1f] border-2 border-[#1a4d4d] rounded-2xl p-4">
             <nav className="space-y-2">
-              <button
-                onClick={() => setActiveTab('account')}
-                className={`w-full text-left px-4 py-3 rounded-xl font-medium transition-all duration-300 ${activeTab === 'account'
-                  ? 'bg-[#00ff88] text-[#0a1f1f]'
-                  : 'text-gray-400 hover:text-white hover:bg-[#1a4d4d]'
-                  }`}
-              >
-                Account
-              </button>
-              <button
-                onClick={() => setActiveTab('myEvents')}
-                className={`w-full text-left px-4 py-3 rounded-xl font-medium transition-all duration-300 ${activeTab === 'myEvents'
-                  ? 'bg-[#00ff88] text-[#0a1f1f]'
-                  : 'text-gray-400 hover:text-white hover:bg-[#1a4d4d]'
-                  }`}
-              >
-                My Events
-              </button>
-              <button
-                onClick={() => setActiveTab('profileCard')}
-                className={`w-full text-left px-4 py-3 rounded-xl font-medium transition-all duration-300 ${activeTab === 'profileCard'
-                  ? 'bg-[#00ff88] text-[#0a1f1f]'
-                  : 'text-gray-400 hover:text-white hover:bg-[#1a4d4d]'
-                  }`}
-              >
-                Profile Card
-              </button>
+              {[
+                { key: 'account', label: 'Account' },
+                { key: 'myEvents', label: 'My Events' },
+                { key: 'certificates', label: 'Certificates' },
+                { key: 'bookmarks', label: 'Bookmarks' },
+                { key: 'password', label: 'Password' },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  className={`w-full text-left px-4 py-3 rounded-xl font-medium transition-all duration-300 ${activeTab === key
+                    ? 'bg-[#00ff88] text-[#0a1f1f]'
+                    : 'text-gray-400 hover:text-white hover:bg-[#1a4d4d]'
+                    }`}
+                >
+                  {label}
+                </button>
+              ))}
             </nav>
           </div>
         </div>
 
-        {/* Main Content Area */}
+        {/* Main Content */}
         <div className="flex-1 p-8 mt-24 lg:mt-14 lg:p-12 lg:mx-auto">
-          {/* Page Header */}
           <div className="mb-8">
             <h1 className="text-white text-4xl font-bold mb-2">Profile</h1>
             <p className="text-gray-400 text-sm">All your details are shown here</p>
           </div>
 
-          {/* Profile Container */}
-          <div className="bg-[#0d2f2f] border-2 border-[#1a4d4d] rounded-3xl p-8 lg:p-12 w-80 lg:w-full">
-            {/* View Profile Header with User ID */}
-            <div className="flex items-center justify-between mb-8 pb-4 border-b-2 border-[#00ff88]">
-              <h2 className="text-white text-xl font-semibold">View Profile</h2>
-              <button
-                onClick={handleCopyUserId}
-                className="flex items-center gap-2 bg-[#0a1f1f] border-2 border-[#00ff88] text-[#00ff88] px-4 py-2 rounded-lg hover:bg-[#1a4d4d] transition-all duration-300"
-              >
-                <span className="font-mono font-medium">{userId}</span>
-                <Copy className="w-4 h-4" />
-              </button>
+          {/* Global feedback */}
+          {profileError && (
+            <div className="mb-4 px-4 py-3 bg-red-900/40 border border-red-500/50 rounded-xl text-red-400 text-sm">
+              {profileError}
             </div>
+          )}
+          {profileSuccess && (
+            <div className="mb-4 px-4 py-3 bg-green-900/40 border border-green-500/50 rounded-xl text-green-400 text-sm">
+              {profileSuccess}
+            </div>
+          )}
 
-            {/* Profile Content Grid */}
-            <div className="grid lg:grid-cols-2 gap-8 items-start">
-              {/* Left: Profile Picture */}
-              <div className="flex flex-col items-center">
-                {/* Circular Profile Picture with Green Border */}
-                <div className="relative mb-6">
-                  <div className="w-40 h-40 rounded-full border-4 border-[#00ff88] overflow-hidden bg-gray-800">
-                    <img
-                      src="/event.png"
-                      alt="Profile"
-                      className="lg:w-full lg:h-full w-40 h-40 object-cover"
-                    />
-                  </div>
-                </div>
-
-                {/* Change Picture Button */}
-                <button className="bg-gradient-to-r from-[#00ff88] to-[#00cc70] hover:from-[#00cc70] hover:to-[#00ff88] text-[#0a1f1f] font-bold py-3 px-8 rounded-xl transition-all duration-300 transform hover:scale-105">
-                  Change picture
+          {/* ── ACCOUNT TAB ── */}
+          {activeTab === 'account' && (
+            <div className="bg-[#0d2f2f] border-2 border-[#1a4d4d] rounded-3xl p-8 lg:p-12 w-full">
+              <div className="flex items-center justify-between mb-8 pb-4 border-b-2 border-[#00ff88]">
+                <h2 className="text-white text-xl font-semibold">View Profile</h2>
+                <button
+                  onClick={handleCopyUserId}
+                  className="flex items-center gap-2 bg-[#0a1f1f] border-2 border-[#00ff88] text-[#00ff88] px-4 py-2 rounded-lg hover:bg-[#1a4d4d] transition-all duration-300"
+                >
+                  <span className="font-mono font-medium">{userId}</span>
+                  <Copy className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Right: User Information Form */}
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Full Name */}
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">Full Name</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      name="fullName"
-                      value={profileData.fullName}
+              <div className="grid lg:grid-cols-2 gap-8 items-start">
+                {/* Avatar */}
+                <div className="flex flex-col items-center">
+                  <div className="relative mb-6">
+                    <div className="w-40 h-40 rounded-full border-4 border-[#00ff88] overflow-hidden bg-gray-800">
+                      <img
+                        src={profileData?.profileImage || '/event.png'}
+                        alt="Profile"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  </div>
+                  <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    className="bg-gradient-to-r from-[#00ff88] to-[#00cc70] hover:from-[#00cc70] hover:to-[#00ff88] text-[#0a1f1f] font-bold py-3 px-8 rounded-xl transition-all duration-300 transform hover:scale-105"
+                  >
+                    Change picture
+                  </button>
+                </div>
+
+                {/* Profile Form */}
+                <form onSubmit={handleSaveProfile} className="space-y-6">
+                  <Field label="Full Name" name="name" value={profileData?.name || ''} onChange={handleInputChange} />
+                  <Field label="Phone number" name="phone" type="tel" value={profileData?.phone || ''} onChange={handleInputChange} />
+                  <Field label="College" name="college" value={profileData?.college || ''} onChange={handleInputChange} />
+                  <Field label="Graduation Year" name="graduationYear" type="number" value={profileData?.graduationYear || ''} onChange={handleInputChange} />
+                  <div>
+                    <label className="text-gray-400 text-sm mb-2 block">Bio</label>
+                    <textarea
+                      name="bio"
+                      value={profileData?.bio || ''}
                       onChange={handleInputChange}
-                      className="flex-1 bg-transparent border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300"
-                      required
+                      rows="3"
+                      className="w-full bg-transparent border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300 resize-none"
                     />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={savingProfile}
+                    className="w-full bg-gradient-to-r from-[#00ff88] to-[#00cc70] hover:from-[#00cc70] hover:to-[#00ff88] text-[#0a1f1f] font-bold py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg hover:shadow-[#00ff88]/50 disabled:opacity-60"
+                  >
+                    {savingProfile ? 'Saving…' : 'Save Changes'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Account Actions */}
+              <div className="mt-10 space-y-6 border-t border-[#1a4d4d] pt-8">
+                {/* Email */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-gray-400 text-sm mb-1 block">Email</label>
+                    <p className="text-white font-medium">{profileData?.email || '—'}</p>
+                  </div>
+                </div>
+
+                {/* Become Organizer */}
+                {profileData?.role !== 'ORGANIZER' && profileData?.role !== 'ADMIN' && (
+                  <div className="flex items-center justify-between pb-6 border-b border-[#1a4d4d]">
+                    <div>
+                      <h3 className="text-white text-lg font-medium mb-1">Become an Organizer</h3>
+                      <p className="text-gray-400 text-sm">Start creating and managing events</p>
+                    </div>
                     <button
-                      type="button"
-                      onClick={() => setIsEditing(!isEditing)}
-                      className="text-[#00ff88] hover:text-[#00cc70] transition-colors p-2"
+                      onClick={handleBecomeOrganizer}
+                      className="bg-gradient-to-r from-[#00ff88] to-[#00cc70] hover:from-[#00cc70] hover:to-[#00ff88] text-[#0a1f1f] font-bold px-6 py-2 rounded-lg transition-all duration-300 transform hover:scale-105"
                     >
-                      <Edit2 className="w-5 h-5" />
+                      Upgrade
                     </button>
                   </div>
-                </div>
+                )}
 
-                {/* Expertise and Gender Row */}
-                <div className="grid grid-cols-2 gap-4">
+                {/* Sign Out */}
+                <div className="flex items-center justify-between pb-6 border-b border-[#1a4d4d]">
                   <div>
-                    <label className="text-gray-400 text-sm mb-2 block">Expertise</label>
-                    <input
-                      type="text"
-                      name="expertise"
-                      value={profileData.expertise}
-                      onChange={handleInputChange}
-                      className="w-full bg-transparent border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300"
-                      required
-                    />
+                    <h3 className="text-white text-lg font-medium mb-1">You are signed in as {displayName}</h3>
+                    <p className="text-gray-400 text-sm">Click to sign out of your account</p>
                   </div>
-                  <div>
-                    <label className="text-gray-400 text-sm mb-2 block">Gender</label>
-                    <select
-                      name="gender"
-                      value={profileData.gender}
-                      onChange={handleInputChange}
-                      className="w-full bg-[#0a1f1f] border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300 cursor-pointer"
-                    >
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
-                      <option value="Prefer not to say">Prefer not to say</option>
-                    </select>
-                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-2 bg-gradient-to-r from-[#00ff88] to-[#00cc70] hover:from-[#00cc70] hover:to-[#00ff88] text-[#0a1f1f] font-bold px-6 py-2 rounded-lg transition-all duration-300 transform hover:scale-105"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sign out
+                  </button>
                 </div>
+              </div>
+            </div>
+          )}
 
-                {/* Phone Number */}
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">Phone number</label>
-                  <input
-                    type="tel"
-                    name="phoneNumber"
-                    value={profileData.phoneNumber}
-                    onChange={handleInputChange}
-                    className="w-full bg-transparent border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300"
-                    required
-                  />
+          {/* ── MY EVENTS TAB ── */}
+          {activeTab === 'myEvents' && (
+            <div className="bg-[#0d2f2f] border-2 border-[#1a4d4d] rounded-3xl p-8 lg:p-12 w-full">
+              <h2 className="text-white text-2xl font-semibold mb-6 pb-4 border-b-2 border-[#00ff88]">My Registered Events</h2>
+              {myEvents.length === 0 ? (
+                <p className="text-gray-400">You haven't registered for any events yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  {myEvents.map((reg, i) => {
+                    const evt = reg.event || reg;
+                    return (
+                      <div key={reg.id || i} className="bg-[#0a1f1f] border border-[#1a4d4d] rounded-2xl p-5 flex items-center justify-between hover:border-[#00ff88] transition-colors">
+                        <div>
+                          <h3 className="text-white font-semibold">{evt.title || 'Event'}</h3>
+                          <p className="text-gray-400 text-sm mt-1">{evt.category} · {evt.mode}</p>
+                          <p className="text-gray-500 text-xs mt-1">Status: <span className="text-[#00ff88]">{reg.status || 'REGISTERED'}</span></p>
+                        </div>
+                        <button
+                          onClick={() => navigate(`/event/${evt.id}`)}
+                          className="text-[#00ff88] text-sm border border-[#00ff88] px-4 py-2 rounded-lg hover:bg-[#00ff88]/10 transition-colors"
+                        >
+                          View
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
+              )}
+            </div>
+          )}
 
-                {/* Location */}
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">Location</label>
-                  <input
-                    type="text"
-                    name="location"
-                    value={profileData.location}
-                    onChange={handleInputChange}
-                    className="w-full bg-transparent border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300"
-                    required
-                  />
+          {/* ── CERTIFICATES TAB ── */}
+          {activeTab === 'certificates' && (
+            <div className="bg-[#0d2f2f] border-2 border-[#1a4d4d] rounded-3xl p-8 lg:p-12 w-full">
+              <h2 className="text-white text-2xl font-semibold mb-6 pb-4 border-b-2 border-[#00ff88]">My Certificates</h2>
+              {myCertificates.length === 0 ? (
+                <p className="text-gray-400">No certificates yet. Participate in events to earn them!</p>
+              ) : (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {myCertificates.map((cert, i) => (
+                    <div key={cert.id || i} className="bg-[#0a1f1f] border border-[#1a4d4d] rounded-2xl p-5 hover:border-[#00ff88] transition-colors">
+                      <p className="text-white font-semibold mb-2">{cert.event?.title || 'Event Certificate'}</p>
+                      <p className="text-gray-400 text-sm mb-4">Issued: {cert.issuedAt ? new Date(cert.issuedAt).toLocaleDateString() : '—'}</p>
+                      {cert.certificateUrl && (
+                        <a
+                          href={cert.certificateUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[#00ff88] text-sm border border-[#00ff88] px-4 py-2 rounded-lg hover:bg-[#00ff88]/10 transition-colors inline-block"
+                        >
+                          View Certificate
+                        </a>
+                      )}
+                    </div>
+                  ))}
                 </div>
+              )}
+            </div>
+          )}
 
-                {/* About */}
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">About</label>
-                  <textarea
-                    name="about"
-                    value={profileData.about}
-                    onChange={handleInputChange}
-                    rows="4"
-                    className="w-full bg-transparent border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300 resize-none"
-                    required
-                  ></textarea>
+          {/* ── BOOKMARKS TAB ── */}
+          {activeTab === 'bookmarks' && (
+            <div className="bg-[#0d2f2f] border-2 border-[#1a4d4d] rounded-3xl p-8 lg:p-12 w-full">
+              <h2 className="text-white text-2xl font-semibold mb-6 pb-4 border-b-2 border-[#00ff88]">Saved Events</h2>
+              {myBookmarks.length === 0 ? (
+                <p className="text-gray-400">You haven't bookmarked any events yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  {myBookmarks.map((bm, i) => {
+                    const evt = bm.event || bm;
+                    return (
+                      <div key={bm.id || i} className="bg-[#0a1f1f] border border-[#1a4d4d] rounded-2xl p-5 flex items-center justify-between hover:border-[#00ff88] transition-colors">
+                        <div>
+                          <h3 className="text-white font-semibold">{evt.title || 'Event'}</h3>
+                          <p className="text-gray-400 text-sm mt-1">{evt.category} · {evt.mode}</p>
+                        </div>
+                        <button
+                          onClick={() => navigate(`/event/${evt.id}`)}
+                          className="text-[#00ff88] text-sm border border-[#00ff88] px-4 py-2 rounded-lg hover:bg-[#00ff88]/10 transition-colors"
+                        >
+                          View
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
+              )}
+            </div>
+          )}
 
-                {/* Save Button */}
+          {/* ── PASSWORD TAB ── */}
+          {activeTab === 'password' && (
+            <div className="bg-[#0d2f2f] border-2 border-[#1a4d4d] rounded-3xl p-8 lg:p-12 w-full max-w-lg">
+              <h2 className="text-white text-2xl font-semibold mb-6 pb-4 border-b-2 border-[#00ff88]">Change Password</h2>
+              {passwordError && (
+                <div className="mb-4 px-4 py-3 bg-red-900/40 border border-red-500/50 rounded-xl text-red-400 text-sm">{passwordError}</div>
+              )}
+              {passwordSuccess && (
+                <div className="mb-4 px-4 py-3 bg-green-900/40 border border-green-500/50 rounded-xl text-green-400 text-sm">{passwordSuccess}</div>
+              )}
+              <form onSubmit={handleChangePassword} className="space-y-5">
+                <Field label="Current Password" name="currentPassword" type="password" value={passwordData.currentPassword}
+                  onChange={e => setPasswordData(p => ({ ...p, currentPassword: e.target.value }))} />
+                <Field label="New Password" name="newPassword" type="password" value={passwordData.newPassword}
+                  onChange={e => setPasswordData(p => ({ ...p, newPassword: e.target.value }))} />
+                <Field label="Confirm New Password" name="confirmPassword" type="password" value={passwordData.confirmPassword}
+                  onChange={e => setPasswordData(p => ({ ...p, confirmPassword: e.target.value }))} />
                 <button
                   type="submit"
-                  className="w-full bg-gradient-to-r from-[#00ff88] to-[#00cc70] hover:from-[#00cc70] hover:to-[#00ff88] text-[#0a1f1f] font-bold py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg hover:shadow-[#00ff88]/50"
+                  disabled={savingPassword}
+                  className="w-full bg-gradient-to-r from-[#00ff88] to-[#00cc70] hover:from-[#00cc70] hover:to-[#00ff88] text-[#0a1f1f] font-bold py-3 px-6 rounded-xl transition-all duration-300 disabled:opacity-60"
                 >
-                  Save Changes
+                  {savingPassword ? 'Updating…' : 'Update Password'}
                 </button>
               </form>
             </div>
-          </div>
-
-          {/* Institution Section */}
-          <div className="bg-[#0d2f2f] border-2 border-[#1a4d4d] rounded-3xl p-8 lg:p-12 mt-8 w-80 lg:w-full ">
-            {/* Section Header */}
-            <div className="flex items-center justify-between mb-6 pb-4 border-b-2 border-[#00ff88]">
-              <h2 className="text-white text-2xl font-semibold">Institution</h2>
-              <button
-                type="button"
-                className="text-[#00ff88] hover:text-[#00cc70] transition-colors p-2"
-              >
-                <Edit2 className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Institution Form Fields */}
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Row 1: Institute Name and Type */}
-              <div className="grid lg:grid-cols-2 gap-6">
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">Institute Name</label>
-                  <input
-                    type="text"
-                    name="instituteName"
-                    value={profileData.instituteName}
-                    onChange={handleInputChange}
-                    className="w-full bg-transparent border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">Type</label>
-                  <select
-                    name="instituteType"
-                    value={profileData.instituteType}
-                    onChange={handleInputChange}
-                    className="w-full bg-[#0a1f1f] border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300 cursor-pointer"
-                  >
-                    <option value="Student">Student</option>
-                    <option value="Alumni">Alumni</option>
-                    <option value="Faculty">Faculty</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Row 2: Domain and Passout Year */}
-              <div className="grid lg:grid-cols-2 gap-6">
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">Domain</label>
-                  <input
-                    type="text"
-                    name="domain"
-                    value={profileData.domain}
-                    onChange={handleInputChange}
-                    className="w-full bg-transparent border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">Passout Year</label>
-                  <input
-                    type="text"
-                    name="passoutYear"
-                    value={profileData.passoutYear}
-                    onChange={handleInputChange}
-                    placeholder="2027"
-                    className="w-full bg-transparent border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300"
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* Row 3: Course and Specialization */}
-              <div className="grid lg:grid-cols-2 gap-6">
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">Course</label>
-                  <input
-                    type="text"
-                    name="course"
-                    value={profileData.course}
-                    onChange={handleInputChange}
-                    className="w-full bg-transparent border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">Specialization</label>
-                  <input
-                    type="text"
-                    name="specialization"
-                    value={profileData.specialization}
-                    onChange={handleInputChange}
-                    className="w-full bg-transparent border-2 border-[#1a4d4d] text-white py-3 px-4 rounded-xl focus:outline-none focus:border-[#00ff88] transition-all duration-300"
-                    required
-                  />
-                </div>
-              </div>
-            </form>
-          </div>
-
-          {/* Others Section */}
-          <div className="bg-[#0d2f2f] border-2 border-[#1a4d4d] rounded-3xl p-8 lg:p-12 mt-8 w-80 lg:w-full ">
-            {/* Section Header */}
-            <div className="mb-6 pb-4 border-b-2 border-[#00ff88]">
-              <h2 className="text-white text-2xl font-semibold">Others</h2>
-            </div>
-
-            {/* Others Form */}
-            <form onSubmit={handleSubmit} className="space-y-8 items-center justify-center">
-              {/* T-Shirt Size */}
-              <div>
-                <label className="text-gray-400 text-sm mb-4 block">T - Shirt size</label>
-                <div className="flex flex-wrap gap-3 justify-center lg:justify-start">
-                  {['Small - S', 'Medium - M', 'Large - L', 'Extra Large - XL', 'Extra Extra Large - XXL', 'Extra Large - XXXL'].map((size) => (
-                    <label
-                      key={size}
-                      className={`flex items-center gap-2 px-6 py-3 border-2 rounded-xl cursor-pointer transition-all duration-300 ${profileData.tshirtSize === size
-                        ? 'border-[#00ff88] bg-[#00ff88]/10'
-                        : 'border-[#1a4d4d] hover:border-[#00ff88]/50'
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="tshirtSize"
-                        value={size}
-                        checked={profileData.tshirtSize === size}
-                        onChange={handleInputChange}
-                        className="w-4 h-4 accent-[#00ff88]"
-                      />
-                      <span className="text-white text-sm">{size}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Meal Info */}
-              <div>
-                <label className="text-gray-400 text-sm mb-4 block">Meal info</label>
-                <div className="flex flex-wrap gap-4 justify-center lg:justify-start">
-                  {['Veg', 'Non- Veg', 'No preference'].map((meal) => (
-                    <label
-                      key={meal}
-                      className={`flex items-center gap-2 px-8 py-3 border-2 rounded-xl cursor-pointer transition-all duration-300 ${profileData.mealPreference === meal
-                        ? 'border-[#00ff88] bg-[#00ff88]/10'
-                        : 'border-[#1a4d4d] hover:border-[#00ff88]/50'
-                        }`}
-                    >
-                      <input
-                        type="radio"
-                        name="mealPreference"
-                        value={meal}
-                        checked={profileData.mealPreference === meal}
-                        onChange={handleInputChange}
-                        className="w-4 h-4 accent-[#00ff88]"
-                      />
-                      <span className="text-white text-sm">{meal}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Save Button */}
-              <button
-                type="submit"
-                className="w-full bg-gradient-to-r from-[#00ff88] to-[#00cc70] hover:from-[#00cc70] hover:to-[#00ff88] text-[#0a1f1f] font-bold py-3 px-6 rounded-xl transition-all duration-300 transform hover:scale-[1.02] hover:shadow-lg hover:shadow-[#00ff88]/50"
-              >
-                Save Changes
-              </button>
-            </form>
-          </div>
-
-          {/* Account Section */}
-          <div className="bg-[#0d2f2f] border-2 border-[#1a4d4d] rounded-3xl p-8 lg:p-12 mt-8  w-80 lg:w-full ">
-            {/* Section Header */}
-            <div className="mb-6 pb-4 border-b-2 border-[#00ff88]">
-              <h2 className="text-white text-2xl font-semibold">Account</h2>
-            </div>
-
-            {/* Account Content */}
-            <div className="space-y-8">
-              {/* Email Section */}
-              <div className="flex items-center justify-between pb-6 border-b border-[#1a4d4d]">
-                <div>
-                  <label className="text-gray-400 text-sm mb-2 block">Email</label>
-                  <p className="text-white lg:text-xl text-sm font-medium">{profileData.email}</p>
-                </div>
-                <button
-                  type="button"
-                  className="bg-transparent border-2 text-sm lg:text-lg border-[#1a4d4d] text-white lg:px-8 px-6 lg:py-3 py-2 rounded-lg hover:border-[#00ff88] hover:text-[#00ff88] transition-all duration-300"
-                >
-                  Change
-                </button>
-              </div>
-
-              {/* Sign Out Section */}
-              <div className="flex items-center justify-between pb-6 border-b border-[#1a4d4d]">
-                <div>
-                  <h3 className="text-white lg:text-lg text-sm font-medium mb-1 mr-1"> You signed in as {profileData.fullName}</h3>
-                  <p className="text-gray-400 text-sm">Devices or Browsers where you are signed in</p>
-                </div>
-                <button
-                  type="button"
-                  className="bg-gradient-to-r text-sm lg:text-lg from-[#00ff88] to-[#00cc70] hover:from-[#00cc70] hover:to-[#00ff88] text-[#0a1f1f] font-bold lg:px-8 px-6 lg:py-3 py-2 rounded-lg transition-all duration-300 transform hover:scale-105"
-                >
-                  Sign out
-                </button>
-              </div>
-
-              {/* Delete Account Section */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-white text-lg font-medium mb-1">Delete account</h3>
-                  <p className="text-gray-400 text-sm">Permanently delete your account and data</p>
-                </div>
-                <button
-                  type="button"
-                  className="bg-red-600 text-sm lg:text-lg hover:bg-red-700 text-white font-bold lg:px-8 px-6 lg:py-3 py-2 rounded-lg transition-all duration-300 transform hover:scale-105"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Mobile Navigation (Sidebar) */}
+        {/* Mobile Nav */}
         <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0d2626] border-t border-[#1a4d4d] p-4">
           <div className="flex justify-around">
-            <button
-              onClick={() => setActiveTab('account')}
-              className={`px-4 py-2 rounded-lg font-medium transition-all ${activeTab === 'account'
-                ? 'bg-[#00ff88] text-[#0a1f1f]'
-                : 'text-gray-400'
-                }`}
-            >
-              Account
-            </button>
-            <button
-              onClick={() => setActiveTab('myEvents')}
-              className={`px-4 py-2 rounded-lg font-medium transition-all ${activeTab === 'myEvents'
-                ? 'bg-[#00ff88] text-[#0a1f1f]'
-                : 'text-gray-400'
-                }`}
-            >
-              Events
-            </button>
-            <button
-              onClick={() => setActiveTab('profileCard')}
-              className={`px-4 py-2 rounded-lg font-medium transition-all ${activeTab === 'profileCard'
-                ? 'bg-[#00ff88] text-[#0a1f1f]'
-                : 'text-gray-400'
-                }`}
-            >
-              Card
-            </button>
+            {[
+              { key: 'account', label: 'Account' },
+              { key: 'myEvents', label: 'Events' },
+              { key: 'certificates', label: 'Certs' },
+              { key: 'bookmarks', label: 'Saved' },
+              { key: 'password', label: 'Password' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                className={`px-3 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === key ? 'bg-[#00ff88] text-[#0a1f1f]' : 'text-gray-400'
+                  }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
-
       </div>
       <Footer />
     </>

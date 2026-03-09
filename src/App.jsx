@@ -1,22 +1,19 @@
 import React from "react";
 import { Routes, Route } from "react-router-dom";
 import Home from "./components/Home";
-import HomeTest from "./components/HomeTest";
-import About from "./components/About";
+import AboutNew from "./components/AboutNew";
+import TeamHalfCircle from "./components/TeamHalfCircle";
 import Signup from "./components/Signup";
 import Login from "./components/Login";
 import Organise from "./components/Organise";
 import Profile from "./components/Profile";
-import AboutNew from "./components/AboutNew";
-import TeamHalfCircle from "./components/TeamHalfCircle";
 import CalenderPage from "./pages/calender";
 import OrganizeEvent from "./components/OrganizeEvent";
 import EventDetails from "./components/EventDetails";
 
-
 function App() {
   return (
-    <div className=" text-white font-urbanist overflow-x-hidden">
+    <div className="text-white font-urbanist overflow-x-hidden">
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
@@ -27,9 +24,9 @@ function App() {
         <Route path="/profile" element={<Profile />} />
         <Route path="/calender" element={<CalenderPage />} />
         <Route path="/organize" element={<OrganizeEvent />} />
+        {/* Event detail — supports both /event/:id and legacy /event?id=... */}
+        <Route path="/event/:id" element={<EventDetails />} />
         <Route path="/event" element={<EventDetails />} />
-        {/* <Route path="/about" element={<About />} /> */}
-        {/* <Route path="*" element={<NotFound />} /> */}
       </Routes>
     </div>
   );

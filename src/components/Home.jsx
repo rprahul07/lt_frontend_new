@@ -8,6 +8,8 @@ import AnimatedBadge from "./animations/AnimateRibbon";
 import ContactPage from "./ContactPage";
 import Header from "./Header";
 import Footer from "./Footer";
+import { events as eventsApi } from "../services/api";
+import { Link } from "react-router-dom";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -22,7 +24,7 @@ const Logo = () => (
 
 // --- FIX #1: Moved constant data outside the component ---
 // This array will now be created only once, not on every render.
-const eventsData = [
+const dummyEventsData = [
   {
     id: 1,
     title: "Hackathon @TEC20",
@@ -547,6 +549,61 @@ const Home = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [dbEvents, setDbEvents] = useState([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(true);
+
+  // Map database event model to what CollaborationEventCard expects
+  const mapDbEventToCard = (event) => {
+    // Map categories to colors
+    const categoryColors = {
+      Hackathon: "blue",
+      Ideathon: "red",
+      Webinar: "purple",
+      Conclave: "green",
+      Other: "blue",
+    };
+
+    return {
+      id: event.id,
+      title: event.title,
+      prizePool:
+        event.prizeAmount && event.prizeAmount > 0
+          ? `₹ ${event.prizeAmount.toLocaleString()} Prize`
+          : event.prizeType === "NONE"
+            ? "Free Entry"
+            : event.prizeType === "MERCH"
+              ? "Official Merch"
+              : event.prizeType,
+      location: event.venueName || (event.mode === "ONLINE" ? "Virtual" : event.mode),
+      format: event.mode === "ONLINE" ? "Online" : "In-person",
+      participants: event.maxParticipants ? `${event.maxParticipants}+` : "Open",
+      color: categoryColors[event.category] || "green",
+    };
+  };
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        setIsLoadingEvents(true);
+        const res = await eventsApi.getAll({ limit: 4 });
+
+        // Backend returns result of buildPaginatedResult: { data: events[], meta: {} }
+        // Our api.js wrapper returns the 'data' field of the response
+        const eventArray = (Array.isArray(res) ? res : res.data) || [];
+
+        const mapped = eventArray.map(mapDbEventToCard);
+        setDbEvents(mapped);
+      } catch (error) {
+        console.error("Failed to fetch events:", error);
+        // Fallback to dummy data if API fails or returns empty
+        setDbEvents(dummyEventsData);
+      } finally {
+        setIsLoadingEvents(false);
+      }
+    };
+
+    fetchEvents();
+  }, []);
 
   const slidesContainerRef = useRef(null);
   const ctaTextRef = useRef(null);
@@ -989,10 +1046,25 @@ const Home = () => {
           <div className="mb-6 sm:mb-8 px-2 sm:px-3">
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white">Upcoming Events</h2>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-0">
-            {eventsData.map((event) => (
-              <CollaborationEventCard key={event.id} event={event} />
-            ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-0 min-h-[400px]">
+            {isLoadingEvents ? (
+              // Loading Skeleton
+              Array(4).fill(0).map((_, i) => (
+                <div key={i} className="p-4 animate-pulse">
+                  <div className="w-full h-80 bg-slate-800/50 rounded-2xl border-2 border-white/5"></div>
+                </div>
+              ))
+            ) : dbEvents.length > 0 ? (
+              dbEvents.map((event) => (
+                <Link key={event.id} to={`/event/${event.id}`}>
+                  <CollaborationEventCard event={event} />
+                </Link>
+              ))
+            ) : (
+              <div className="col-span-full py-20 text-center text-white/50">
+                <p className="text-xl">No upcoming events found.</p>
+              </div>
+            )}
           </div>
           <a
             href="/"
