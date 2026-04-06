@@ -115,7 +115,7 @@ import { GoogleLogin } from '@react-oauth/google';const Login = () => {
                                     }}
                                     theme="filled_black" // Fits your dark theme better
                                     shape="pill"
-                                    width="100%"
+                                    width="400"
                                 />
                             </div>
 
