@@ -427,6 +427,11 @@ export const bookmarks = {
   getAll: () => get("/api/bookmarks"),
 };
 
+// ─── Referrals ────────────────────────────────────────────────────────────────
+export const referrals = {
+  trackClick: (code) => post("/api/referral/click", { code }),
+};
+
 // ─── Organizer ────────────────────────────────────────────────────────────────
 
 export const organizer = {
@@ -500,6 +505,7 @@ const api = {
   bookmarks,
   organizer,
   admin,
+  referrals,
 };
 
 export default api;

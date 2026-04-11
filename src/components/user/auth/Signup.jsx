@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 
 const Signup = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectPath = searchParams.get('redirect') || '/';
+
   const { register } = useAuth();
 
   const [formData, setFormData] = useState({
@@ -56,8 +59,9 @@ const Signup = () => {
       await register({
         ...payload,
         graduationYear: Number(payload.graduationYear) || payload.graduationYear,
+        referralCode: localStorage.getItem('lt_referral') || undefined,
       });
-      navigate('/');
+      navigate(redirectPath);
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
     } finally {
@@ -220,7 +224,7 @@ const Signup = () => {
           <p className="text-center text-gray-400 text-sm mt-6">
             Already have an account?{' '}
             <button
-              onClick={() => navigate('/login')}
+              onClick={() => navigate(redirectPath === '/' ? '/login' : `/login?redirect=${encodeURIComponent(redirectPath)}`)}
               className="text-[#00ff88] hover:underline font-medium"
             >
               Sign in

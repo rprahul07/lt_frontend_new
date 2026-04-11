@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import { GoogleLogin } from '@react-oauth/google';
 
 const Login = () => {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const redirectPath = searchParams.get('redirect') || '/';
+
     const { login, googleAuth, forgotPassword } = useAuth();
 
     const [email, setEmail] = useState('');
@@ -21,7 +24,7 @@ const Login = () => {
         setLoading(true);
         try {
             await login({ email, password });
-            navigate('/');
+            navigate(redirectPath);
         } catch (err) {
             setError(err.message || 'Login failed. Check your credentials.');
         } finally {
@@ -105,7 +108,7 @@ const Login = () => {
                                             setLoading(true);
                                             // credentialResponse.credential is the JWT idToken
                                             await googleAuth(credentialResponse.credential);
-                                            navigate('/');
+                                            navigate(redirectPath);
                                         } catch (err) {
                                             setError(err.message || 'Google Login failed.');
                                         } finally {
@@ -179,7 +182,7 @@ const Login = () => {
                             <p className="text-center text-gray-400 text-sm mt-6">
                                 Don't have an account?{' '}
                                 <button
-                                    onClick={() => navigate('/signup')}
+                                    onClick={() => navigate(redirectPath === '/' ? '/signup' : `/signup?redirect=${encodeURIComponent(redirectPath)}`)}
                                     className="text-[#00ff88] hover:underline font-medium"
                                 >
                                     Sign up

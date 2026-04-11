@@ -4,7 +4,7 @@ import { ArrowLeft, Bookmark, BookmarkCheck, Loader2 } from 'lucide-react';
 import Header from './layout/Header';
 import Footer from './layout/Footer';
 import CountdownTimer from './CountdownTimer';
-import { events as eventsApi, bookmarks as bookmarksApi } from '../services/api';
+import { events as eventsApi, bookmarks as bookmarksApi, referrals as referralsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 // ─── FAQ Accordion ────────────────────────────────────────────────────────────
@@ -55,6 +55,12 @@ const EventDetails = () => {
 
     // ── Load event data ──
     useEffect(() => {
+        const refCode = searchParams.get('ref');
+        if (refCode) {
+            localStorage.setItem('lt_referral', refCode);
+            referralsApi.trackClick(refCode).catch(console.error);
+        }
+
         if (!eventId) {
             setError('No event ID provided.');
             setLoading(false);
@@ -102,7 +108,7 @@ const EventDetails = () => {
 
     const handleRegister = async () => {
         if (!isAuthenticated) {
-            navigate('/login');
+            navigate(`/login?redirect=${encodeURIComponent(window.location.pathname)}`);
             return;
         }
         setRegistering(true);
@@ -120,7 +126,7 @@ const EventDetails = () => {
 
     const handleBookmark = async () => {
         if (!isAuthenticated) {
-            navigate('/login');
+            navigate(`/login?redirect=${encodeURIComponent(window.location.pathname)}`);
             return;
         }
         setBookmarking(true);
