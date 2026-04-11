@@ -114,7 +114,7 @@ const EventDetails = () => {
         setRegistering(true);
         setError('');
         try {
-            await eventsApi.registerForEvent(eventId, {});
+            await eventsApi.registerForEvent(eventId, { referralCode: localStorage.getItem('lt_referral') || undefined });
             setRegisterSuccess('You are registered! Check your email for confirmation.');
             setRegistrationStatus(prev => ({ ...prev, isRegistered: true, status: 'PENDING' }));
         } catch (err) {
